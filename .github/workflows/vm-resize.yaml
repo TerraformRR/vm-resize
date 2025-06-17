@@ -1,11 +1,12 @@
-name: Scheduled Multi-VM Azure Resize
+name: Scheduled Azure VM Resize
 
 on:
   schedule:
-    - cron: '5 * * * *'  # Every 5 minutes
+    - cron: '0 5 * * 6'   # up_cron: resize up
+    - cron: '20 5 * * 6'  # down_cron: resize down
 
 jobs:
-  resize-vms:
+  resize-vm:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,56 +22,44 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Install Python dependencies
-        run: pip install pyyaml python-hcl2
+        run: pip install pyyaml
 
       - name: Decide resize action and update tfvars
-        id: resize
+        env:
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
         run: |
-          import os, sys, yaml, json, time
-          from datetime import datetime, timedelta
+          import os, yaml, json
 
-          # Read schedule
+          # Load schedule
           with open('resize_schedule.yaml', 'r') as f:
               schedule = yaml.safe_load(f)
 
-          now = datetime.utcnow()
-          minute = now.minute
-          hour = now.hour
-          dow = now.weekday()  # Monday=0
+          # Get the VM entry
+          vm = schedule['vms']['linuxvm']
 
-          # For demo, only handle vm1
-          vm = schedule['vms']['vm1']
+          # Get the current cron string (from the workflow trigger)
+          current_cron = os.environ.get('GITHUB_EVENT_SCHEDULE', '')
 
-          # Parse cron times
-          def parse_cron(cronstr):
-              m, h, dom, mon, dow = cronstr.split()
-              return int(m), int(h), dow
-
-          up_min, up_hour, up_dow = parse_cron(vm['up_cron'])
-          down_min, down_hour, down_dow = parse_cron(vm['down_cron'])
-
-          # Find if now matches up_cron or is 20 min after
-          resize_to = None
-          if (minute == up_min and hour == up_hour and str(now.isoweekday()%7) == up_dow):
-              resize_to = vm['new_size']
-              print(f"Resizing up to {resize_to}")
-          elif (now - timedelta(minutes=20)).minute == up_min and (now - timedelta(minutes=20)).hour == up_hour and str((now - timedelta(minutes=20)).isoweekday()%7) == up_dow:
-              resize_to = vm['old_size']
-              print(f"Resizing down to {resize_to}")
-
-          if resize_to:
-              # Update terraform.tfvars.json or equivalent
-              tfvars_file = 'terraform.auto.tfvars.json'
-              tfvars = {}
-              if os.path.exists(tfvars_file):
-                  with open(tfvars_file, 'r') as f:
-                      tfvars = json.load(f)
-              tfvars['vm_size'] = resize_to
-              with open(tfvars_file, 'w') as f:
-                  json.dump(tfvars, f)
-              print(f"Updated VM size to {resize_to}")
+          # Determine which size to set
+          if current_cron == vm['up_cron']:
+              vm_size = vm['new_size']
+              print(f"Resizing VM to new_size: {vm_size}")
+          elif current_cron == vm['down_cron']:
+              vm_size = vm['old_size']
+              print(f"Resizing VM to old_size: {vm_size}")
           else:
-              print("No resize action needed at this time.")
+              print("No matching cron; exiting.")
+              exit(0)
+
+          # Write the size to terraform.auto.tfvars.json
+          tfvars = {}
+          tfvars_file = 'terraform.auto.tfvars.json'
+          if os.path.exists(tfvars_file):
+              with open(tfvars_file, 'r') as f:
+                  tfvars = json.load(f)
+          tfvars['vm_size'] = vm_size
+          with open(tfvars_file, 'w') as f:
+              json.dump(tfvars, f)
 
       - name: Terraform Init
         run: terraform init
