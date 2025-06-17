@@ -2,12 +2,8 @@ name: Scheduled Multi-VM Azure Resize
 
 on:
   schedule:
-    # List all up_cron and down_cron values from resize_schedule.yaml
-    #- cron: '0 5 * * 6'    # vm1 up
-    #- cron: '30 2 * * 1'   # vm1 down
-    #- cron: '0 6 * * 0'    # vm2 up
-    #- cron: '30 3 * * 2'   # vm2 down
-     - cron: '*/5 * * * *'
+    - cron: '*/5 * * * *'  # Every 5 minutes
+
 jobs:
   resize-vms:
     runs-on: ubuntu-latest
@@ -24,50 +20,65 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Resize VMs based on schedule
+      - name: Install Python dependencies
+        run: pip install pyyaml python-hcl2
+
+      - name: Decide resize action and update tfvars
+        id: resize
         run: |
-          pip install pyyaml python-hcl2
-          python3 <<EOF
-import yaml, os
-import hcl2
-import json
+          import os, sys, yaml, json, time
+          from datetime import datetime, timedelta
 
-with open('resize_schedule.yaml', 'r') as f:
-    schedule = yaml.safe_load(f)
+          # Read schedule
+          with open('resize_schedule.yaml', 'r') as f:
+              schedule = yaml.safe_load(f)
 
-with open('terraform.tfvars', 'r') as f:
-    tfvars = hcl2.load(f)
+          now = datetime.utcnow()
+          minute = now.minute
+          hour = now.hour
+          dow = now.weekday()  # Monday=0
 
-# Now tfvars is a Python dict with your variables
-# print(tfvars)  # For debugging
+          # For demo, only handle vm1
+          vm = schedule['vms']['vm1']
 
-# GitHub Actions does not provide the cron value as an environment variable by default.
-# You may need to hardcode or parse the cron value from the workflow trigger if needed.
-current_cron = ''  # Set to '' or to a specific cron string if required
+          # Parse cron times
+          def parse_cron(cronstr):
+              m, h, dom, mon, dow = cronstr.split()
+              return int(m), int(h), dow
 
-# Example: update vm_size if needed
-# tfvars['vm_size'] = 'NewSize'
+          up_min, up_hour, up_dow = parse_cron(vm['up_cron'])
+          down_min, down_hour, down_dow = parse_cron(vm['down_cron'])
 
-import sys
+          # Find if now matches up_cron or is 20 min after
+          resize_to = None
+          if (minute == up_min and hour == up_hour and str(now.isoweekday()%7) == up_dow):
+              resize_to = vm['new_size']
+              print(f"Resizing up to {resize_to}")
+          elif (now - timedelta(minutes=20)).minute == up_min and (now - timedelta(minutes=20)).hour == up_hour and str((now - timedelta(minutes=20)).isoweekday()%7) == up_dow:
+              resize_to = vm['old_size']
+              print(f"Resizing down to {resize_to}")
 
-output_file = 'terraform.auto.tfvars.json'
-if os.path.exists(output_file):
-    print(f"Warning: {output_file} already exists and will be overwritten.", file=sys.stderr)
-try:
-    with open(output_file, 'w') as f:
-        json.dump(tfvars, f)
-except Exception as e:
-    print(f"Error writing to {output_file}: {e}", file=sys.stderr)
-    sys.exit(1)
-EOF
-          GITHUB_EVENT_SCHEDULE: ${{ matrix.cron }}
+          if resize_to:
+              # Update terraform.tfvars.json or equivalent
+              tfvars_file = 'terraform.auto.tfvars.json'
+              tfvars = {}
+              if os.path.exists(tfvars_file):
+                  with open(tfvars_file, 'r') as f:
+                      tfvars = json.load(f)
+              tfvars['vm_size'] = resize_to
+              with open(tfvars_file, 'w') as f:
+                  json.dump(tfvars, f)
+              print(f"Updated VM size to {resize_to}")
+          else:
+              print("No resize action needed at this time.")
+
       - name: Terraform Init
         run: terraform init
 
       - name: Terraform Apply
+        run: terraform apply -auto-approve
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        run: terraform apply -auto-approve
