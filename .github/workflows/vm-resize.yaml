@@ -2,12 +2,8 @@ name: Scheduled Multi-VM Azure Resize
 
 on:
   schedule:
-    # List all up_cron and down_cron values from resize_schedule.yaml
-    #- cron: '0 5 * * 6'    # vm1 up
-    #- cron: '30 2 * * 1'   # vm1 down
-    #- cron: '0 6 * * 0'    # vm2 up
-    #- cron: '30 3 * * 2'   # vm2 down
     - cron: '*/5 * * * *'
+
 jobs:
   resize-vms:
     runs-on: ubuntu-latest
@@ -25,12 +21,12 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Resize VMs based on schedule
+        env:
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
         run: |
           pip install pyyaml python-hcl2
           python3 <<EOF
-import yaml, os
-import hcl2
-import json
+import yaml, os , hcl2, json
 
 with open('resize_schedule.yaml', 'r') as f:
     schedule = yaml.safe_load(f)
@@ -38,12 +34,7 @@ with open('resize_schedule.yaml', 'r') as f:
 with open('terraform.tfvars', 'r') as f:
     tfvars = hcl2.load(f)
 
-# Now tfvars is a Python dict with your variables
-# print(tfvars)  # For debugging
-
-# GitHub Actions does not provide the cron value as an environment variable by default.
-# You may need to hardcode or parse the cron value from the workflow trigger if needed.
-current_cron = ''  # Set to '' or to a specific cron string if required
+current_cron = os.environ.get('GITHUB_EVENT_SCHEDULE', '')
 
 # Example: update vm_size if needed
 # tfvars['vm_size'] = 'NewSize'
@@ -60,14 +51,14 @@ except Exception as e:
     print(f"Error writing to {output_file}: {e}", file=sys.stderr)
     sys.exit(1)
 EOF
-          GITHUB_EVENT_SCHEDULE: ${{ matrix.cron }}
+
       - name: Terraform Init
         run: terraform init
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: terraform apply -auto-approve
