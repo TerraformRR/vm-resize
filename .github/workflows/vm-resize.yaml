@@ -2,7 +2,7 @@ name: Scheduled Azure VM Resize
 
 on:
   schedule:
-    - cron: '55 21 * * *'   # up_cron: resize up
+    - cron: '07 22 17 6 2'   # up_cron: resize up
     - cron: '05 22 * * 6'  # down_cron: resize down
 
 jobs:
