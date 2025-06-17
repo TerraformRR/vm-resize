@@ -2,7 +2,7 @@ name: Scheduled Multi-VM Azure Resize
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Every 5 minutes
+    - cron: '5 * * * *'  # Every 5 minutes
 
 jobs:
   resize-vms:
