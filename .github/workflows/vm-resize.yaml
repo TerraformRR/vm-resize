@@ -7,7 +7,7 @@ on:
     #- cron: '30 2 * * 1'   # vm1 down
     #- cron: '0 6 * * 0'    # vm2 up
     #- cron: '30 3 * * 2'   # vm2 down
-     - cron: '*/5 * * * *'   # For testing: runs every 5 minutes, not recommended for production
+     - cron: '*/5 * * * *'
 jobs:
   resize-vms:
     runs-on: ubuntu-latest
