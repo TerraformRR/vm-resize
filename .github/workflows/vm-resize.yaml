@@ -7,7 +7,7 @@ on:
     #- cron: '30 2 * * 1'   # vm1 down
     #- cron: '0 6 * * 0'    # vm2 up
     #- cron: '30 3 * * 2'   # vm2 down
-     - cron: '*/5 * * * *'
+     - cron: '*/5 * * * *'   # For testing: runs every 5 minutes, not recommended for production
 jobs:
   resize-vms:
     runs-on: ubuntu-latest
@@ -26,34 +26,41 @@ jobs:
 
       - name: Resize VMs based on schedule
         run: |
-          - name: Resize VMs based on schedule
-  run: |
-    pip install pyyaml python-hcl2
-    python3 <<EOF
+          pip install pyyaml python-hcl2
+          python3 <<EOF
 import yaml, os
 import hcl2
+import json
 
-with open('resize_schedule.yaml') as f:
+with open('resize_schedule.yaml', 'r') as f:
     schedule = yaml.safe_load(f)
 
 with open('terraform.tfvars', 'r') as f:
     tfvars = hcl2.load(f)
 
 # Now tfvars is a Python dict with your variables
-print(tfvars)  # For debugging
+# print(tfvars)  # For debugging
 
-current_cron = os.environ.get('GITHUB_EVENT_SCHEDULE', '')
+# GitHub Actions does not provide the cron value as an environment variable by default.
+# You may need to hardcode or parse the cron value from the workflow trigger if needed.
+current_cron = ''  # Set to '' or to a specific cron string if required
 
 # Example: update vm_size if needed
 # tfvars['vm_size'] = 'NewSize'
 
-with open('terraform.auto.tfvars.json', 'w') as f:
-    import json
-    json.dump(tfvars, f)
-EOF
-  env:
-    GITHUB_EVENT_SCHEDULE: ${{ matrix.cron }}
+import sys
 
+output_file = 'terraform.auto.tfvars.json'
+if os.path.exists(output_file):
+    print(f"Warning: {output_file} already exists and will be overwritten.", file=sys.stderr)
+try:
+    with open(output_file, 'w') as f:
+        json.dump(tfvars, f)
+except Exception as e:
+    print(f"Error writing to {output_file}: {e}", file=sys.stderr)
+    sys.exit(1)
+EOF
+          GITHUB_EVENT_SCHEDULE: ${{ matrix.cron }}
       - name: Terraform Init
         run: terraform init
 
