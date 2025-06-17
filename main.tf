@@ -7,7 +7,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   disable_password_authentication = true
   license_type                    = "RHEL_BYOS"
   patch_mode                      = "ImageDefault"
-  allow_extension_operations      = false
+  allow_extension_operations      = true
   disk_controller_type            = "NVMe"
   network_interface_ids           = var.network_interface_ids
   admin_username                  = var.admin_username
@@ -18,7 +18,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
     public_key = var.admin_ssh_public_key
   }
   boot_diagnostics {
-    storage_account_uri = "https://terragit.blob.core.windows.net/terrastate/terrastate/terraform.tfstate"
+    storage_account_uri = ""
   }
 
 

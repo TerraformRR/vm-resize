@@ -75,11 +75,6 @@ variable "source_image_version" {
   type        = string
 }
 
-variable "tags" {
-  description = "Tags to associate with the resources"
-  type        = map(string)
-}
-
 # Business logic: Use a different VM size during business hours (default 7 to 18).
 variable "business_hour_start" {
   description = "Start hour (24h format) for business hours"
